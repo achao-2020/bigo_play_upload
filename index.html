@@ -5,6 +5,9 @@
   <title>飞书多维表格上传</title>
   <style>
     body { font-family: Arial; padding: 20px; max-width: 1200px; margin: auto; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .logout-btn { padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    .logout-btn:hover { background: #c82333; }
     .table-box { max-height: 400px; overflow: auto; border: 1px solid #ccc; }
     table { border-collapse: collapse; width: 100%; min-width: 900px; }
     th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
@@ -25,7 +28,10 @@
 </head>
 <body>
 
-<h2>上传比赛 JSON</h2>
+<div class="header">
+  <h2>上传比赛 JSON</h2>
+  <button class="logout-btn" id="logoutBtn">登出</button>
+</div>
 <input type="file" id="fileInput" accept=".json" />
 <!-- 自定义文件上传按钮 -->
 <div style="display: inline-block; position: relative; margin-left: 20px;">
@@ -109,6 +115,78 @@
 <script type="module">
   import { parseGameJson, submitToFeishu, parseTeamScores, parseDetails, TABLE_IDS } from './feishu/index.js';
   // JSZip将通过全局变量window.JSZip访问
+
+  // 获取后端地址
+  const BACKEND_BASE_URL = window.FEISHU_BACKEND_BASE_URL || '';
+
+  // 获取登录 token
+  function getAuthToken() {
+    return localStorage.getItem('auth_token');
+  }
+
+  // 检查登录态
+  async function checkAuth() {
+    const token = getAuthToken();
+    if (!token) {
+      window.location.href = 'login.html';
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${BACKEND_BASE_URL}/api/auth/check`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'x-auth-token': token
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.authenticated) {
+          return true;
+        }
+      }
+    } catch (error) {
+      console.error('检查登录态失败:', error);
+    }
+
+    // token 无效，清除并跳转
+    localStorage.removeItem('auth_token');
+    window.location.href = 'login.html';
+    return false;
+  }
+
+  // 登出功能
+  async function logout() {
+    const token = getAuthToken();
+    if (token) {
+      try {
+        await fetch(`${BACKEND_BASE_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-auth-token': token
+          }
+        });
+      } catch (error) {
+        console.error('登出请求失败:', error);
+      }
+    }
+    
+    localStorage.removeItem('auth_token');
+    window.location.href = 'login.html';
+  }
+
+  // 页面加载时检查登录态
+  const isAuthenticated = await checkAuth();
+  if (!isAuthenticated) {
+    // 如果未登录，checkAuth 已经跳转到登录页，这里直接返回
+    // 但为了安全，我们还是阻止后续代码执行
+    throw new Error('未登录');
+  }
+
+  // 登出按钮事件
+  document.getElementById('logoutBtn').addEventListener('click', logout);
 
   const fileInput = document.getElementById('fileInput');
   const batchFileInput = document.getElementById('batchFileInput');

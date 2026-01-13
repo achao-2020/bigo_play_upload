@@ -33,6 +33,40 @@ const FEISHU_CONFIG = {
   }
 };
 
+// 登录配置（从环境变量读取）
+const LOGIN_CONFIG = {
+  USERNAME: process.env.LOGIN_USERNAME || 'admin',
+  PASSWORD: process.env.LOGIN_PASSWORD || 'admin123'
+};
+
+// 存储有效的登录 token（简单实现，生产环境建议使用 Redis 或 JWT）
+const validTokens = new Set();
+const TOKEN_EXPIRE_TIME = 24 * 60 * 60 * 1000; // 24小时过期
+
+// 生成随机 token
+function generateToken() {
+  return Math.random().toString(36).substring(2, 15) + 
+         Math.random().toString(36).substring(2, 15) + 
+         Date.now().toString(36);
+}
+
+// 验证 token 是否有效
+function isValidToken(token) {
+  return validTokens.has(token);
+}
+
+// 中间件：验证登录态
+function requireAuth(req, res, next) {
+  const token = req.headers.authorization?.replace('Bearer ', '') || 
+                req.headers['x-auth-token'];
+  
+  if (!token || !isValidToken(token)) {
+    return res.status(401).json({ error: '未登录或登录已过期，请重新登录' });
+  }
+  
+  next();
+}
+
 // 缓存访问令牌
 let cachedToken = null;
 let tokenExpireAt = 0;
@@ -66,8 +100,58 @@ async function getTenantAccessToken() {
   return cachedToken;
 }
 
+// 登录接口
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  
+  if (username === LOGIN_CONFIG.USERNAME && password === LOGIN_CONFIG.PASSWORD) {
+    const token = generateToken();
+    validTokens.add(token);
+    
+    // 24小时后自动清除 token
+    setTimeout(() => {
+      validTokens.delete(token);
+    }, TOKEN_EXPIRE_TIME);
+    
+    res.json({ 
+      success: true, 
+      token: token,
+      message: '登录成功' 
+    });
+  } else {
+    res.status(401).json({ 
+      success: false, 
+      error: '账号或密码错误' 
+    });
+  }
+});
+
+// 检查登录态接口
+app.get('/api/auth/check', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '') || 
+                req.headers['x-auth-token'];
+  
+  if (token && isValidToken(token)) {
+    res.json({ authenticated: true });
+  } else {
+    res.status(401).json({ authenticated: false });
+  }
+});
+
+// 登出接口
+app.post('/api/auth/logout', (req, res) => {
+  const token = req.headers.authorization?.replace('Bearer ', '') || 
+                req.headers['x-auth-token'];
+  
+  if (token) {
+    validTokens.delete(token);
+  }
+  
+  res.json({ success: true, message: '已登出' });
+});
+
 // 代理接口：添加飞书多维表格记录（通用接口，支持指定表格ID）
-app.post('/api/feishu/add-records', async (req, res) => {
+app.post('/api/feishu/add-records', requireAuth, async (req, res) => {
   try {
     const token = await getTenantAccessToken();
     const { APP_TOKEN } = FEISHU_CONFIG.BITABLE;
@@ -103,7 +187,7 @@ app.post('/api/feishu/add-records', async (req, res) => {
 });
 
 // 代理接口：添加飞书多维表格记录（球员数据，保持向后兼容）
-app.post('/api/feishu/player/add-records', async (req, res) => {
+app.post('/api/feishu/player/add-records', requireAuth, async (req, res) => {
   // 复用通用接口，指定球员表格ID
   req.body.tableId = FEISHU_CONFIG.BITABLE.PLAYER_TABLE_ID;
   // 转发请求到通用接口
@@ -111,7 +195,7 @@ app.post('/api/feishu/player/add-records', async (req, res) => {
 });
 
 // 代理接口：搜索飞书多维表格记录
-app.post('/api/feishu/search-records', async (req, res) => {
+app.post('/api/feishu/search-records', requireAuth, async (req, res) => {
   try {
     const token = await getTenantAccessToken();
     const { APP_TOKEN } = FEISHU_CONFIG.BITABLE;

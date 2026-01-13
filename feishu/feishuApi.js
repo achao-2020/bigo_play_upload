@@ -17,6 +17,27 @@ function buildApiUrl(path) {
   return `${base}${path}`;
 }
 
+// 获取登录 token
+function getAuthToken() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    return window.localStorage.getItem('auth_token') || '';
+  }
+  return '';
+}
+
+// 构建带认证头的请求配置
+function buildAuthHeaders(additionalHeaders = {}) {
+  const token = getAuthToken();
+  return {
+    'Content-Type': 'application/json',
+    ...(token && {
+      'Authorization': `Bearer ${token}`,
+      'x-auth-token': token
+    }),
+    ...additionalHeaders
+  };
+}
+
 export async function addBitableRecords(records, tableId = '') {
   // 获取第一个不为空的比赛id
   let gameId = null;
@@ -55,9 +76,7 @@ export async function addBitableRecords(records, tableId = '') {
     // 调用搜索接口检查是否存在相同的比赛id
     const searchRes = await fetch(buildApiUrl('/api/feishu/search-records'), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: buildAuthHeaders(),
       body: JSON.stringify({
         tableId: tableId,
         viewId: viewId,
@@ -73,9 +92,7 @@ export async function addBitableRecords(records, tableId = '') {
   // 调用本地/远程代理接口
   const res = await fetch(buildApiUrl('/api/feishu/add-records'), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers: buildAuthHeaders(),
     body: JSON.stringify({
       records: records,
       tableId: tableId
