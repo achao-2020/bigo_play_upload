@@ -1,0 +1,105 @@
+{
+  "game": [
+    {
+      "id": "dd086bb7-4907-4b32-b806-b50e5daec657",
+      "players": [        
+        {
+          "name": "晓涛",
+          "number": "00",
+          "team": "黑队",
+          "isPlaying": true,
+          "currentTime": 2130.0390000000007,
+          "totalTime": 2112.0829999999996,
+          "score": 21,
+          "fouls": 2,
+          "plusMinus": -17,
+          "presetId": 2
+        }
+      ],
+      "isGameRunning": false,
+      "currentPeriod": 4,
+      "teamScores": {
+        "红队": 128,
+        "黑队": 140
+      },
+      "teamFouls": {
+        "红队": {
+          "1": 5,
+          "2": 6,
+          "3": 5,
+          "4": 3
+        },
+        "黑队": {
+          "1": 5,
+          "2": 4,
+          "3": 4,
+          "4": 11
+        }
+      },
+      "lastUpdateTime": null,
+      "gameStartTime": 1767612665516
+    }
+  ],
+  "details": [
+    {
+      "timestamp": 1767595766136,
+      "period": 1,
+      "gameTime": 0,
+      "type": "player-add",
+      "team": "黑队",
+      "player": "晓涛",
+      "number": "00",
+      "value": null
+    },
+    {
+      "timestamp": 1767595768970,
+      "period": 1,
+      "gameTime": 0,
+      "type": "player-add",
+      "team": "黑队",
+      "player": "文灏",
+      "number": "2",
+      "value": null
+    },
+    {
+      "timestamp": 1767612652484,
+      "period": 1,
+      "gameTime": 0,
+      "type": "sub-in",
+      "team": "红队",
+      "player": "烟佬",
+      "number": "4",
+      "value": null
+    },
+    {
+      "timestamp": 1767612665516,
+      "period": 1,
+      "gameTime": 0,
+      "type": "game-start",
+      "team": "",
+      "player": "比赛",
+      "number": "",
+      "value": null
+    },
+    {
+      "timestamp": 1767612739365,
+      "period": 1,
+      "gameTime": 73,
+      "type": "foul",
+      "team": "黑队",
+      "player": "李陈超",
+      "number": "9",
+      "value": 1
+    },
+    {
+      "timestamp": 1767612766010,
+      "period": 1,
+      "gameTime": 100,
+      "type": "score",
+      "team": "红队",
+      "player": "烟佬",
+      "number": "4",
+      "value": 2
+    }
+  ]
+}

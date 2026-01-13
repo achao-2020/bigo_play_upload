@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>飞书多维表格上传</title>
+  <style>
+    body { font-family: Arial; padding: 20px; max-width: 1200px; margin: auto; }
+    .table-box { max-height: 400px; overflow: auto; border: 1px solid #ccc; }
+    table { border-collapse: collapse; width: 100%; min-width: 900px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+    th { background: #f5f5f5; position: sticky; top: 0; }
+    button { margin-top: 16px; padding: 10px 24px; }
+  </style>
+  <!-- 引入JSZip库 -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <!-- 后端地址配置
+       本地开发（使用 node server.js 同时提供前端和后端）时，可以保持为空字符串。
+       部署到线上后（前端在 Cloudflare Pages，后端在 Render/Railway 等），
+       请将下面的值改成你的后端地址，例如：
+       window.FEISHU_BACKEND_BASE_URL = 'https://your-backend.onrender.com';
+  -->
+  <script>
+    window.FEISHU_BACKEND_BASE_URL = window.FEISHU_BACKEND_BASE_URL || '';
+  </script>
+</head>
+<body>
+
+<h2>上传比赛 JSON</h2>
+<input type="file" id="fileInput" accept=".json" />
+<!-- 自定义文件上传按钮 -->
+<div style="display: inline-block; position: relative; margin-left: 20px;">
+  <input type="file" id="batchFileInput" accept=".zip,.rar" style="opacity: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: pointer;" />
+  <button style="padding: 5px 10px; cursor: pointer;">上传压缩文件</button>
+</div>
+<button id="batchUploadBtn">批量上传</button>
+
+<!-- 进度条 -->
+<div id="progressContainer" style="margin-top: 10px; display: none;">
+  <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+    <span>上传进度：</span>
+    <span id="progressText">0/0</span>
+  </div>
+  <div style="width: 100%; height: 20px; background-color: #f0f0f0; border-radius: 10px; overflow: hidden;">
+    <div id="progressBar" style="height: 100%; width: 0%; background-color: #4CAF50; transition: width 0.3s;"></div>
+  </div>
+</div>
+
+<div class="table-box" style="margin-top: 20px;">
+  <h3 style="text-align: center; margin: 10px 0;">比赛球队数据</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>比赛id</th>
+        <th>球队</th>
+        <th>得分</th>
+        <th>比赛时间</th>
+        <th>比赛结果</th>
+      </tr>
+    </thead>
+    <tbody id="teamScoresTbody"></tbody>
+  </table>
+</div>
+
+<div class="table-box">
+  <h3 style="text-align: center; margin: 10px 0;">比赛球员数据表</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>比赛id</th>
+        <th>球队</th>
+        <th>球员姓名</th>
+        <th>球衣号码</th>
+        <th>出场时间(s)</th>
+        <th>得分</th>
+        <th>犯规次数</th>
+        <th>正负值</th>
+        <th>比赛时间</th>
+        <th>比赛结果</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div class="table-box" style="margin-top: 20px;">
+  <h3 style="text-align: center; margin: 10px 0;">比赛明细数据</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>比赛id</th>
+        <th>比赛时间</th>
+        <th>当前节</th>
+        <th>比赛进行时间</th>
+        <th>类型</th>
+        <th>球队</th>
+        <th>球员</th>
+        <th>号码</th>
+        <th>得分</th>
+        <th>操作时间</th>
+      </tr>
+    </thead>
+    <tbody id="detailsTbody"></tbody>
+  </table>
+</div>
+
+<button id="submitBtn" disabled>提交到飞书</button>
+<div id="status"></div>
+
+<script type="module">
+  import { parseGameJson, submitToFeishu, parseTeamScores, parseDetails, TABLE_IDS } from './feishu/index.js';
+  // JSZip将通过全局变量window.JSZip访问
+
+  const fileInput = document.getElementById('fileInput');
+  const batchFileInput = document.getElementById('batchFileInput');
+  const batchUploadBtn = document.getElementById('batchUploadBtn');
+  const progressContainer = document.getElementById('progressContainer');
+  const progressBar = document.getElementById('progressBar');
+  const progressText = document.getElementById('progressText');
+  const tbody = document.getElementById('tbody');
+  const teamScoresTbody = document.getElementById('teamScoresTbody');
+  const detailsTbody = document.getElementById('detailsTbody');
+  const submitBtn = document.getElementById('submitBtn');
+  const status = document.getElementById('status');
+
+  let records = [];
+  let teamScoresRecords = [];
+  let detailsRecords = [];
+
+  // 时间格式化函数：将时间戳转换为YYYY-MM-DD HH:MM:SS格式
+  function formatTime(timestamp) {
+    const date = new Date(timestamp);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  }
+
+  // 复制文本到剪贴板并显示提示
+  function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+      // 创建提示元素
+      const toast = document.createElement('div');
+      toast.textContent = '复制成功！';
+      toast.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        padding: 10px 20px;
+        background-color: rgba(0, 0, 0, 0.8);
+        color: white;
+        border-radius: 5px;
+        z-index: 9999;
+        font-size: 14px;
+      `;
+      
+      // 添加到页面
+      document.body.appendChild(toast);
+      
+      // 2秒后移除提示
+      setTimeout(() => {
+        document.body.removeChild(toast);
+      }, 2000);
+    }).catch(err => {
+      console.error('复制失败:', err);
+    });
+  }
+
+  // 格式化比赛id显示（只显示前10个字符）
+  function formatMatchId(id) {
+    const idStr = String(id);
+    return idStr.length > 10 ? idStr.substring(0, 10) + '...' : idStr;
+  }
+
+  fileInput.addEventListener('change', async e => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const json = JSON.parse(await file.text());
+    records = parseGameJson(json);
+    teamScoresRecords = parseTeamScores(json);
+    detailsRecords = parseDetails(json);
+
+    // 渲染球员数据表格
+    tbody.innerHTML = '';
+    records.forEach(r => {
+      const tr = document.createElement('tr');
+      Object.entries(r).forEach(([key, value]) => {
+        const td = document.createElement('td');
+        if (key === "比赛时间") {
+          td.textContent = formatTime(value);
+        } else if (key === "比赛id") {
+          // 比赛id特殊处理：显示前10个字符，鼠标悬停显示完整id，点击复制
+          const idStr = String(value);
+          const displayValue = formatMatchId(idStr);
+          td.textContent = displayValue;
+          td.title = idStr; // 鼠标悬停显示完整id
+          td.style.cursor = 'pointer'; // 显示鼠标指针
+          td.style.textDecoration = 'underline'; // 显示下划线
+          td.style.textDecorationColor = '#999'; // 下划线颜色
+          td.onclick = () => copyToClipboard(idStr); // 点击复制
+        } else {
+          td.textContent = value;
+        }
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    // 渲染球队数据表格
+    teamScoresTbody.innerHTML = '';
+    teamScoresRecords.forEach(r => {
+      const tr = document.createElement('tr');
+      Object.entries(r).forEach(([key, value]) => {
+        const td = document.createElement('td');
+        if (key === "比赛时间") {
+          td.textContent = formatTime(value);
+        } else if (key === "比赛id") {
+          // 比赛id特殊处理：显示前10个字符，鼠标悬停显示完整id，点击复制
+          const idStr = String(value);
+          const displayValue = formatMatchId(idStr);
+          td.textContent = displayValue;
+          td.title = idStr; // 鼠标悬停显示完整id
+          td.style.cursor = 'pointer'; // 显示鼠标指针
+          td.style.textDecoration = 'underline'; // 显示下划线
+          td.style.textDecorationColor = '#999'; // 下划线颜色
+          td.onclick = () => copyToClipboard(idStr); // 点击复制
+        } else {
+          td.textContent = value;
+        }
+        tr.appendChild(td);
+      });
+      teamScoresTbody.appendChild(tr);
+    });
+
+    // 渲染比赛明细数据表格
+    detailsTbody.innerHTML = '';
+    detailsRecords.forEach(r => {
+      const tr = document.createElement('tr');
+      Object.entries(r).forEach(([key, value]) => {
+        const td = document.createElement('td');
+        if (key === "操作时间") {
+          td.textContent = formatTime(value);
+        } else if (key === "比赛id") {
+          // 比赛id特殊处理：显示前10个字符，鼠标悬停显示完整id，点击复制
+          const idStr = String(value);
+          const displayValue = formatMatchId(idStr);
+          td.textContent = displayValue;
+          td.title = idStr; // 鼠标悬停显示完整id
+          td.style.cursor = 'pointer'; // 显示鼠标指针
+          td.style.textDecoration = 'underline'; // 显示下划线
+          td.style.textDecorationColor = '#999'; // 下划线颜色
+          td.onclick = () => copyToClipboard(idStr); // 点击复制
+        } else {
+          td.textContent = value;
+        }
+        tr.appendChild(td);
+      });
+      detailsTbody.appendChild(tr);
+    });
+
+    submitBtn.disabled = records.length === 0;
+  });
+
+  // 处理单个JSON文件
+  async function processSingleFile(fileContent) {
+    try {
+      const json = JSON.parse(fileContent);
+      const currentRecords = parseGameJson(json);
+      const currentTeamScoresRecords = parseTeamScores(json);
+      const currentDetailsRecords = parseDetails(json);
+      
+      // 提交到飞书
+      await submitToFeishu(currentRecords, TABLE_IDS.PLAYER);
+      await submitToFeishu(currentTeamScoresRecords, TABLE_IDS.TEAM);
+      await submitToFeishu(currentDetailsRecords, TABLE_IDS.DETAIL);
+      
+      return true;
+    } catch (e) {
+      console.error('处理文件失败:', e);
+      return false;
+    }
+  }
+
+  // 批量处理JSON文件（每2秒处理10个）
+  async function batchProcessFiles(files) {
+    const totalFiles = files.length;
+    let processedFiles = 0;
+    
+    // 显示进度条
+    progressContainer.style.display = 'block';
+    progressBar.style.width = '0%';
+    progressText.textContent = `${processedFiles}/${totalFiles}`;
+    
+    // 分批次处理文件，每批10个，间隔2秒
+    for (let i = 0; i < totalFiles; i += 10) {
+      const batch = files.slice(i, i + 10);
+      
+      // 并行处理当前批次的文件
+      const batchResults = await Promise.all(batch.map(file => processSingleFile(file.content)));
+      
+      // 更新已处理文件数量
+      processedFiles += batch.length;
+      
+      // 更新进度条
+      const progressPercentage = Math.round((processedFiles / totalFiles) * 100);
+      progressBar.style.width = `${progressPercentage}%`;
+      progressText.textContent = `${processedFiles}/${totalFiles}`;
+      
+      // 如果不是最后一批，等待2秒
+      if (i + 10 < totalFiles) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+    
+    // 处理完成后隐藏进度条
+    setTimeout(() => {
+      progressContainer.style.display = 'none';
+      status.textContent = `批量上传完成，共处理 ${totalFiles} 个文件`;
+    }, 1000);
+  }
+
+  // 批量上传按钮点击事件
+  batchUploadBtn.onclick = async () => {
+    const file = batchFileInput.files[0];
+    if (!file) {
+      status.textContent = '请先选择压缩文件';
+      return;
+    }
+    
+    // 检查文件类型
+    if (!file.name.endsWith('.zip')) {
+      status.textContent = '仅支持ZIP格式的压缩文件';
+      return;
+    }
+    
+    status.textContent = '正在解压缩文件...';
+    
+    try {
+      // 读取文件内容
+      const fileReader = new FileReader();
+      const fileContent = await new Promise((resolve, reject) => {
+        fileReader.onload = (e) => resolve(e.target.result);
+        fileReader.onerror = (e) => reject(new Error('读取文件失败'));
+        fileReader.readAsArrayBuffer(file);
+      });
+      
+      // 解压文件
+      const zip = await window.JSZip.loadAsync(fileContent);
+      
+      // 收集所有JSON文件
+      const jsonFiles = [];
+      for (const [fileName, file] of Object.entries(zip.files)) {
+        if (fileName.endsWith('.json')) {
+          const content = await file.async('text');
+          jsonFiles.push({ name: fileName, content: content });
+        }
+      }
+      
+      if (jsonFiles.length === 0) {
+        status.textContent = '压缩文件中没有找到JSON文件';
+        return;
+      }
+      
+      status.textContent = `找到 ${jsonFiles.length} 个JSON文件，开始批量上传...`;
+      
+      // 批量处理文件
+      await batchProcessFiles(jsonFiles);
+      
+    } catch (e) {
+      // 更友好的错误提示
+      if (e.message.includes('Can\'t find end of central directory')) {
+        status.textContent = '批量上传失败：上传的不是有效的ZIP文件';
+      } else {
+        status.textContent = '批量上传失败：' + e.message;
+      }
+      console.error('批量上传失败:', e);
+    }
+  };
+
+  submitBtn.onclick = async () => {
+    try {
+      status.textContent = '提交中...';
+      submitBtn.disabled = true;
+      
+      // 同时提交球员数据、球队数据和明细数据
+      // 提交球员数据到球员表格（使用默认表格ID）
+      const playerResult = await submitToFeishu(records, TABLE_IDS.PLAYER);
+      
+      // 提交球队数据到球队表格
+      const teamResult = await submitToFeishu(teamScoresRecords, TABLE_IDS.TEAM);
+      
+      // 提交明细数据到明细表格
+      const detailResult = await submitToFeishu(detailsRecords, TABLE_IDS.DETAIL);
+      
+      status.textContent = '提交成功 ✅';
+    } catch (e) {
+      status.textContent = '提交失败：' + e.message;
+      submitBtn.disabled = false;
+    }
+  };
+</script>
+
+</body>
+</html>
