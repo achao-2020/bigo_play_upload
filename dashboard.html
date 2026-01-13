@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BIGO 篮球技术统计仪表盘</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background: #f5f5f5;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .header {
+      background: white;
+      padding: 16px 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+    }
+    
+    .header h1 {
+      font-size: 20px;
+      color: #333;
+      font-weight: 600;
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    
+    .back-btn, .logout-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    
+    .back-btn {
+      background: #f0f0f0;
+      color: #333;
+    }
+    
+    .back-btn:hover {
+      background: #e0e0e0;
+    }
+    
+    .logout-btn {
+      background: #dc3545;
+      color: white;
+    }
+    
+    .logout-btn:hover {
+      background: #c82333;
+    }
+    
+    .dashboard-container {
+      flex: 1;
+      padding: 20px;
+      overflow: hidden;
+    }
+    
+    .dashboard-wrapper {
+      width: 100%;
+      height: 100%;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      overflow: hidden;
+      position: relative;
+    }
+    
+    .dashboard-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+    
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #666;
+      font-size: 16px;
+    }
+    
+    .error-message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #dc3545;
+      padding: 20px;
+    }
+  </style>
+  <!-- 后端地址配置 -->
+  <script>
+    window.FEISHU_BACKEND_BASE_URL = window.FEISHU_BACKEND_BASE_URL || '';
+  </script>
+</head>
+<body>
+  <div class="header">
+    <h1>BIGO 篮球技术统计仪表盘</h1>
+    <div class="header-actions">
+      <a href="index.html" class="back-btn">返回上传页</a>
+      <button class="logout-btn" id="logoutBtn">登出</button>
+    </div>
+  </div>
+  
+  <div class="dashboard-container">
+    <div class="dashboard-wrapper">
+      <div class="loading" id="loading">正在加载仪表盘...</div>
+      <iframe 
+        id="dashboardIframe"
+        class="dashboard-iframe"
+        src="https://my.feishu.cn/share/base/dashboard/shrcnv1dlqtTrMCdTHMnkTY4xnd"
+        allowfullscreen
+        onload="handleIframeLoad()"
+        onerror="handleIframeError()">
+      </iframe>
+    </div>
+  </div>
+
+  <script>
+    // 获取后端地址
+    const BACKEND_BASE_URL = window.FEISHU_BACKEND_BASE_URL || '';
+
+    // 获取登录 token
+    function getAuthToken() {
+      return localStorage.getItem('auth_token');
+    }
+
+    // 检查登录态
+    async function checkAuth() {
+      const token = getAuthToken();
+      if (!token) {
+        window.location.href = 'login.html';
+        return false;
+      }
+
+      try {
+        const response = await fetch(`${BACKEND_BASE_URL}/api/auth/check`, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-auth-token': token
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.authenticated) {
+            return true;
+          }
+        }
+      } catch (error) {
+        console.error('检查登录态失败:', error);
+      }
+
+      // token 无效，清除并跳转
+      localStorage.removeItem('auth_token');
+      window.location.href = 'login.html';
+      return false;
+    }
+
+    // 登出功能
+    async function logout() {
+      const token = getAuthToken();
+      if (token) {
+        try {
+          await fetch(`${BACKEND_BASE_URL}/api/auth/logout`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'x-auth-token': token
+            }
+          });
+        } catch (error) {
+          console.error('登出请求失败:', error);
+        }
+      }
+      
+      localStorage.removeItem('auth_token');
+      window.location.href = 'login.html';
+    }
+
+    // iframe 加载完成
+    function handleIframeLoad() {
+      const loading = document.getElementById('loading');
+      if (loading) {
+        loading.style.display = 'none';
+      }
+    }
+
+    // iframe 加载错误
+    function handleIframeError() {
+      const loading = document.getElementById('loading');
+      const wrapper = document.querySelector('.dashboard-wrapper');
+      
+      if (loading) {
+        loading.style.display = 'none';
+      }
+      
+      const errorDiv = document.createElement('div');
+      errorDiv.className = 'error-message';
+      errorDiv.innerHTML = `
+        <h3>加载失败</h3>
+        <p>无法加载飞书仪表盘，请检查网络连接或联系管理员。</p>
+      `;
+      wrapper.appendChild(errorDiv);
+    }
+
+    // 页面加载时检查登录态
+    (async () => {
+      const isAuthenticated = await checkAuth();
+      if (!isAuthenticated) {
+        return;
+      }
+
+      // 登出按钮事件
+      document.getElementById('logoutBtn').addEventListener('click', logout);
+    })();
+  </script>
+</body>
+</html>

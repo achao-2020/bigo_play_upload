@@ -30,7 +30,14 @@
 
 <div class="header">
   <h2>上传比赛 JSON</h2>
-  <button class="logout-btn" id="logoutBtn">登出</button>
+  <div style="display: flex; gap: 12px; align-items: center;">
+    <a href="dashboard.html" style="padding: 10px 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; text-decoration: none; border-radius: 6px; font-weight: 500; transition: transform 0.2s, box-shadow 0.2s; display: inline-block;" 
+       onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)'"
+       onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none'">
+      📊 BIGO篮球技术统计仪表盘入口
+    </a>
+    <button class="logout-btn" id="logoutBtn">登出</button>
+  </div>
 </div>
 <input type="file" id="fileInput" accept=".json" />
 <!-- 自定义文件上传按钮 -->
